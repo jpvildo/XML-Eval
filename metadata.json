@@ -1,0 +1,5 @@
+{
+  "name": "Code Conversion Evaluator",
+  "description": "Evaluates code conversions, such as DOCX to XML, using Gemini.",
+  "requestFramePermissions": []
+}
