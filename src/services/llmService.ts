@@ -40,11 +40,12 @@ You operate in three modes based on the user's prompt:
 
 === MODE 1: AUDIT (Prompt: "/audit") ===
 The user will provide source text (from a DOCX) and the converted XML.
-1. Perform a deep comparative analysis.
+1. Perform a deep comparative analysis between the DOCX source and the XML output.
 2. Check strictly against the Active Knowledge Base.
-3. Look for "hallucinations" (e.g., the converter inventing "Article X" or "Introduction" headers).
-4. Evaluate how Oxygen tracked changes (<?oxy_delete...?> or <?oxy_comment...?>) affected the parser's ability to split headers or format text.
-5. Output an "XML Conversion Audit Report" detailing: Structural Errors, Semantic Anomalies, Parsing Failures, Oxygen Markup Issues, and Successes.
+3. Verify DOCX Styles: Ensure that the DOCX styles (e.g., P0, H1, H0, etc.) were parsed and mapped to the correct corresponding XML tags.
+4. Check for Dropped Content: Ensure absolutely NO content is dropped from the Word document to the XML. You must account for Oxygen tracked changes (<?oxy_delete...?> or <?oxy_insert...?>) and comments when verifying this.
+5. Check for Hallucinations: Ensure absolutely NO additional content is added to the XML that is not present in the original Word file (e.g., inventing wrapper headers, fabricating text).
+6. Output a report titled "# XML Conversion Audit Report" (ensure there are spaces between the words) detailing: Structural Errors, Semantic Anomalies, Parsing Failures, Dropped/Added Content, Oxygen Markup Issues, and Successes.
 
 === MODE 2: INGEST (Prompt: "/ingest") ===
 The user will provide a "Correct" XML file as a reference.
@@ -75,6 +76,21 @@ The user will provide a specific instruction to change a rule (e.g., "redefine h
     contents.parts.push({ text: `/update ${inputs.updateInstruction}` });
   }
 
+// Helper to safely decode base64 to UTF-8
+function decodeBase64ToText(base64: string): string {
+  try {
+    const binString = atob(base64);
+    const bytes = new Uint8Array(binString.length);
+    for (let i = 0; i < binString.length; i++) {
+      bytes[i] = binString.charCodeAt(i);
+    }
+    return new TextDecoder().decode(bytes);
+  } catch (e) {
+    console.error('Failed to decode base64', e);
+    return '';
+  }
+}
+
   // Route to the appropriate LLM provider based on the selected modelId
   if (modelId.startsWith('gemini')) {
     const response = await ai.models.generateContent({
@@ -87,9 +103,41 @@ The user will provide a specific instruction to change a rule (e.g., "redefine h
     });
     return response.text;
   } else if (modelId.startsWith('gpt')) {
-    // Placeholder for OpenAI implementation
-    // Note: In a production app, this should be called from a backend server to protect the OPENAI_API_KEY.
-    throw new Error(`Model ${modelId} is configured in the UI but the OpenAI API integration is not yet implemented.`);
+    // Build a pure text prompt for OpenAI
+    let openAiPrompt = '';
+    if (mode === 'audit' && inputs.auditPairs) {
+      openAiPrompt += `/audit\n\nPlease audit the following conversion pairs against the Knowledge Base:\n`;
+      for (let i = 0; i < inputs.auditPairs.length; i++) {
+        const pair = inputs.auditPairs[i];
+        openAiPrompt += `\n\n=== PAIR ${i + 1} ===\n--- SOURCE DOCX (${pair.sourceName}) ---\n`;
+        openAiPrompt += decodeBase64ToText(pair.sourceData);
+        openAiPrompt += `\n--- CONVERTED XML (${pair.xmlName}) ---\n`;
+        openAiPrompt += decodeBase64ToText(pair.xmlData);
+      }
+    } else if (mode === 'ingest' && inputs.ingestFile) {
+      openAiPrompt += `/ingest\n\n=== REFERENCE XML (${inputs.ingestFile.name}) ===\n`;
+      openAiPrompt += decodeBase64ToText(inputs.ingestFile.data);
+    } else if (mode === 'update') {
+      openAiPrompt += `/update ${inputs.updateInstruction}`;
+    }
+
+    const response = await fetch('/api/evaluate/openai', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: modelId,
+        systemInstruction,
+        prompt: openAiPrompt
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Failed to evaluate with OpenAI');
+    }
+
+    const data = await response.json();
+    return data.text;
   } else if (modelId.startsWith('claude')) {
     // Placeholder for Anthropic implementation
     // Note: In a production app, this should be called from a backend server to protect the ANTHROPIC_API_KEY.

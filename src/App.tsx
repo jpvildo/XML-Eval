@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { FileCode2, ArrowRightLeft, CheckCircle2, Database, FileText, Settings, Play, Save, Loader2, BookOpen, Trash2, UploadCloud, Plus, AlertCircle, Sparkles, ChevronDown } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { FileCode2, ArrowRightLeft, CheckCircle2, Database, FileText, Settings, Play, Save, Loader2, BookOpen, Trash2, UploadCloud, Plus, AlertCircle, Sparkles, ChevronDown, Copy, Check } from 'lucide-react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import mammoth from 'mammoth';
@@ -19,61 +19,6 @@ type AuditPair = {
   sourceFile: File | null;
   xmlFile: File | null;
 };
-
-const DEFAULT_KB = `# Active Knowledge Base: DOCX to XML Conversion Rules
-
-## 1. Headers and Subtitles
-* **Splitting:** Standard headers must be split logically. The section number goes in \`<h1>\` and the title goes in \`<p data-type="subtitle">\`. 
-  * *Note:* The parser must accurately split headers even if the section number contains letters (e.g., "Sec. 11A").
-* **Requirement Rules:** Content is required in \`<h1>\` elements, but \`<p data-type="subtitle">\` is optional. 
-  * *Exception:* The \`<section data-type="preliminaries">\` header can (and should) have an empty \`<h1></h1>\` tag.
-* **Subtitle Restriction:** \`<p data-type="subtitle">\` is STRICTLY reserved as a direct child of \`<header>\`. It cannot be used for standard body text.
-* **Abbreviation Overrides:** If a subtitle is very long, the \`<section>\` element should include a \`data-abbrev="..."\` attribute containing the shortened title for TOCs and PDF bookmarks.
-* **No Hallucinations:** The converter must not fabricate wrapper headers. If a division lacks a header in the DOCX, do not invent one.
-
-## 2. Structural Hierarchy & Data-Types
-* **Standard Hierarchy:** Sections can be deeply nested in the following order: \`part\` > \`article\` > \`chapter\` > \`division\` > \`subdivision\` > \`section\`. 
-* **Section Priority:** \`<section data-type="section">\` (representing true code of ordinances sections) must remain the most detailed heading level, regardless of its parent wrapper.
-* **Special Data-Types:** Recognize and apply specific data-types for front/back matter sections: \`preliminaries\`, \`officialscurrent\`, \`officialsoriginal\`, \`preface\`, \`adoptingord\`, \`supphistory\`, \`charter\`, \`index\`, and \`cct\`.
-* **XML Prolog:** Root section elements must contain standard namespace declarations (\`xmlns:xi\`, \`xmlns:xlink\`, \`xmlns:xs\`, \`xmlns\`).
-
-## 3. Footnotes and Asides
-* **Placement is Contextual:** Footnotes (\`<aside class="footnote" id="...">\`) must be placed immediately following the block element containing their reference (\`<span data-fnref="...">\`).
-  * *Header Reference:* If attached to a subtitle, the \`<aside>\` MUST be placed immediately *after* the closing \`</header>\` tag.
-  * *Inline Reference:* If inside a paragraph, the \`<aside>\` MUST be placed immediately *after* the closing \`</p>\` tag of that paragraph.
-  * *Table Reference:* If inside a table cell, the \`<aside>\` MUST be placed immediately *after* the closing \`</table>\` tag.
-
-## 4. Semantic Typography (Italics/Bolding/Alignment)
-* **\`<dfn>\`:** Used STRICTLY for the primary defined term in a Definitions section. 
-* **\`<span class="title">\`:** Used for list item catchphrases or run-in headers at the start of a list item.
-* **\`<em>\` or \`<b>\`:** Used for standard emphasis within regular text.
-* **Paragraph Classes:** Standard text elements use classed hierarchies from level 1 to 9 (e.g., \`p1\`, \`b1\`, \`hg1\` up to \`p9\`, \`b9\`, \`hg9\`). *There is no level 0.*
-* **Alignment:** Use \`<p class="center">\` for centered text.
-
-## 5. Lists
-* **Unordered/Bullet Lists:** Bulleted lists use the standard ordered list class (e.g., \`<p class="ol1">\`) but must place the bullet character inside the incrementor: \`<span class="incr">•</span>\`.
-* **Standard Ordered Lists:** Follow specific class hierarchies (\`ol1\`, \`ol2\`). List numbers/letters must be wrapped in \`<span class="incr">\`.
-* **Multi-Lists:** For lists that combine incrementors (e.g., "g.(i)"), use the multi-list class (e.g., \`<p class="ml3">\`). These require dual incrementor spans: \`<span class="incr">g.</span>\` followed by \`<span class="incrml">(i)</span>\`.
-* **Text:** The text content of all list items must be wrapped in \`<span class="li">\`.
-
-## 6. Images and Figures
-* **Figure Wrapper:** Images must be wrapped in a \`<figure class="center" id="...">\` block.
-* **Captions:** Captions belong inside a \`<figcaption>\` tag. The title text of the caption should be wrapped in \`<strong>\`.
-* **Image Attributes:** The \`<img>\` tag must contain \`id\`, \`class\`, \`src\`, \`width\`, and \`height\` attributes.
-
-## 7. Oxygen Tracked Changes (<?oxy_...?>)
-* **Header Splitting:** Oxygen tags must not break the logic of header splitting. If a header is wrapped in a \`<?oxy_delete>\` or \`<?oxy_insert>\` tag, the parser must accurately split the text into \`<h1>\` and \`subtitle\` *without duplicating* the tracked string in both places.
-* **Comments:** Oxygen comments (\`<?oxy_comment_start?>\`) must be kept inline but must not force regular body text into header tags.
-
-## 8. Legislative History and References
-* **History Notes:** Parenthetical history strings must be parsed into their own \`<p data-type="historynote">\` tags. 
-* **State Laws:** References to state laws must be tagged \`<p data-type="refstatelaw">\`.
-* **Charters:** References to Charters must be tagged \`<p data-type="refcharter">\`.
-* **General References:** General cross-references must be tagged \`<p data-type="crossreference">\` (or \`<p data-type="refeditor">\`).
-
-## 9. Tables
-* **Column Groups:** Empty \`<colgroup>\` elements containing \`<col width="...">\` tags without text data are correct and expected.
-* **Headers:** Table headers (\`<thead>\`) should ideally use \`<th>\` tags rather than standard \`<td>\` tags.`;
 
 const readFileAsBase64 = (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {
@@ -140,9 +85,10 @@ function FileUpload({ label, file, onFileSelect, accept }: { label: string, file
 export default function App() {
   const [activeTab, setActiveTab] = useState<Mode>('audit');
   const [selectedModel, setSelectedModel] = useState<SupportedModel>('gemini-3.1-pro-preview');
+  const [isCopied, setIsCopied] = useState(false);
   
   // State
-  const [knowledgeBase, setKnowledgeBase] = useState(DEFAULT_KB);
+  const [knowledgeBase, setKnowledgeBase] = useState('Loading Knowledge Base...');
   
   // Audit State
   const [auditPairs, setAuditPairs] = useState<AuditPair[]>([]);
@@ -157,6 +103,16 @@ export default function App() {
   const [result, setResult] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [lastProcessedMode, setLastProcessedMode] = useState<'audit' | 'ingest' | 'update' | null>(null);
+
+  useEffect(() => {
+    fetch('/api/kb')
+      .then(res => res.text())
+      .then(text => setKnowledgeBase(text))
+      .catch(err => {
+        console.error('Failed to load KB:', err);
+        setKnowledgeBase('Error loading Knowledge Base.');
+      });
+  }, []);
 
   const handleFilesSelected = (files: FileList | File[]) => {
     const newFiles = Array.from(files);
@@ -235,7 +191,7 @@ export default function App() {
     }
   };
 
-  const handleApplyUpdate = () => {
+  const handleApplyUpdate = async () => {
     if (result && lastProcessedMode === 'update') {
       let newKb = result;
       // Strip markdown code blocks if the AI wrapped the whole response
@@ -245,7 +201,29 @@ export default function App() {
         newKb = newKb.replace(/^```\w*\n/, '').replace(/\n```$/, '');
       }
       setKnowledgeBase(newKb);
-      alert('Knowledge Base updated successfully!');
+      
+      try {
+        await fetch('/api/kb', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: newKb })
+        });
+        alert('Knowledge Base updated successfully and saved to file!');
+      } catch (error) {
+        console.error('Failed to save KB:', error);
+        alert('Knowledge Base updated in memory, but failed to save to file.');
+      }
+      
+      setActiveTab('kb');
+      setResult('');
+    }
+  };
+
+  const handleCopyResults = () => {
+    if (result) {
+      navigator.clipboard.writeText(result);
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 2000);
     }
   };
 
@@ -427,20 +405,20 @@ export default function App() {
             <h2 className="text-lg font-semibold capitalize">
               {activeTab === 'kb' ? 'Knowledge Base' : `${activeTab} Mode`}
             </h2>
-            <div className="hidden md:flex items-center space-x-2 text-xs text-indigo-700 bg-indigo-50 px-3 py-1.5 rounded-full border border-indigo-100 relative">
-              <Sparkles size={14} className="text-indigo-500" />
-              <span className="font-medium">Model:</span>
+            <div className="hidden md:flex items-center space-x-2 text-xs text-indigo-700 bg-indigo-50 px-3 py-1.5 rounded-full border border-indigo-100 relative shrink-0">
+              <Sparkles size={14} className="text-indigo-500 shrink-0" />
+              <span className="font-medium shrink-0">Model:</span>
               <select
                 value={selectedModel}
                 onChange={(e) => setSelectedModel(e.target.value as SupportedModel)}
-                className="bg-transparent font-bold text-indigo-700 focus:outline-none cursor-pointer appearance-none pr-4"
+                className="bg-transparent font-bold text-indigo-700 focus:outline-none cursor-pointer appearance-none pr-4 max-w-[180px] truncate"
               >
                 <optgroup label="Google (Gemini)">
                   <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro Preview</option>
                   <option value="gemini-flash-latest">Gemini Flash Latest (Free Tier)</option>
                 </optgroup>
-                <optgroup label="OpenAI (Coming Soon)">
-                  <option value="gpt-4o" disabled>GPT-4o</option>
+                <optgroup label="OpenAI">
+                  <option value="gpt-4o">GPT-4o</option>
                 </optgroup>
                 <optgroup label="Anthropic (Coming Soon)">
                   <option value="claude-3-5-sonnet" disabled>Claude 3.5 Sonnet</option>
@@ -454,7 +432,7 @@ export default function App() {
             <button
               onClick={handleProcess}
               disabled={isProcessDisabled()}
-              className="flex items-center space-x-2 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg shadow-sm hover:bg-indigo-700 focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="flex items-center space-x-2 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg shadow-sm hover:bg-indigo-700 focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shrink-0 ml-4"
             >
               {isProcessing ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
               <span>Run {activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}</span>
@@ -477,15 +455,26 @@ export default function App() {
             <div className="w-full lg:w-2/3 bg-slate-50 p-6 overflow-y-auto flex flex-col">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wider">Output / Results</h3>
-                {lastProcessedMode === 'update' && result && (
-                  <button
-                    onClick={handleApplyUpdate}
-                    className="flex items-center space-x-1 px-3 py-1.5 bg-emerald-100 text-emerald-700 hover:bg-emerald-200 text-xs font-medium rounded-md transition-colors"
-                  >
-                    <Save size={14} />
-                    <span>Apply to Knowledge Base</span>
-                  </button>
-                )}
+                <div className="flex items-center space-x-2">
+                  {result && (
+                    <button
+                      onClick={handleCopyResults}
+                      className="flex items-center space-x-1.5 px-3 py-1.5 bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900 text-xs font-medium rounded-md transition-colors shadow-sm"
+                    >
+                      {isCopied ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
+                      <span>{isCopied ? 'Copied!' : 'Copy Results'}</span>
+                    </button>
+                  )}
+                  {lastProcessedMode === 'update' && result && (
+                    <button
+                      onClick={handleApplyUpdate}
+                      className="flex items-center space-x-1 px-3 py-1.5 bg-emerald-100 text-emerald-700 hover:bg-emerald-200 text-xs font-medium rounded-md transition-colors shadow-sm"
+                    >
+                      <Save size={14} />
+                      <span>Apply to Knowledge Base</span>
+                    </button>
+                  )}
+                </div>
               </div>
               
               <div className="flex-1 bg-white border border-slate-200 rounded-xl shadow-sm p-6 overflow-y-auto">
@@ -508,9 +497,10 @@ export default function App() {
                         li: ({node, ...props}) => <li className="leading-relaxed" {...props} />,
                         code: ({node, inline, className, children, ...props}: any) => {
                           const match = /language-(\w+)/.exec(className || '');
-                          return !inline ? (
+                          const isBlock = match || String(children).includes('\n');
+                          return isBlock ? (
                             <div className="bg-slate-900 rounded-lg overflow-hidden mb-4">
-                              <div className="px-4 py-2 bg-slate-800 text-slate-400 text-xs font-mono border-b border-slate-700">{match?.[1] || 'code'}</div>
+                              {match && <div className="px-4 py-2 bg-slate-800 text-slate-400 text-xs font-mono border-b border-slate-700">{match[1]}</div>}
                               <pre className="p-4 overflow-x-auto">
                                 <code className="text-slate-50 text-sm font-mono" {...props}>{children}</code>
                               </pre>
