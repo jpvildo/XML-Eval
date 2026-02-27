@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { FileCode2, ArrowRightLeft, CheckCircle2, Database, FileText, Settings, Play, Save, Loader2, BookOpen, Trash2, UploadCloud, Plus, AlertCircle, Sparkles } from 'lucide-react';
+import { FileCode2, ArrowRightLeft, CheckCircle2, Database, FileText, Settings, Play, Save, Loader2, BookOpen, Trash2, UploadCloud, Plus, AlertCircle, Sparkles, ChevronDown } from 'lucide-react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import mammoth from 'mammoth';
-import { evaluateConversion } from './services/geminiService';
+import { evaluateConversion, type SupportedModel } from './services/llmService';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -139,6 +139,7 @@ function FileUpload({ label, file, onFileSelect, accept }: { label: string, file
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<Mode>('audit');
+  const [selectedModel, setSelectedModel] = useState<SupportedModel>('gemini-3.1-pro-preview');
   
   // State
   const [knowledgeBase, setKnowledgeBase] = useState(DEFAULT_KB);
@@ -224,7 +225,7 @@ export default function App() {
         }
       }
 
-      const res = await evaluateConversion(knowledgeBase, activeTab, processInputs);
+      const res = await evaluateConversion(knowledgeBase, activeTab, selectedModel, processInputs);
       setResult(res || 'No response generated.');
       setLastProcessedMode(activeTab);
     } catch (error: any) {
@@ -426,9 +427,26 @@ export default function App() {
             <h2 className="text-lg font-semibold capitalize">
               {activeTab === 'kb' ? 'Knowledge Base' : `${activeTab} Mode`}
             </h2>
-            <div className="hidden md:flex items-center space-x-1.5 text-xs text-indigo-700 bg-indigo-50 px-3 py-1 rounded-full border border-indigo-100">
-              <Sparkles size={14} />
-              <span>Powered by <strong>Gemini 3.1 Pro Preview</strong></span>
+            <div className="hidden md:flex items-center space-x-2 text-xs text-indigo-700 bg-indigo-50 px-3 py-1.5 rounded-full border border-indigo-100 relative">
+              <Sparkles size={14} className="text-indigo-500" />
+              <span className="font-medium">Model:</span>
+              <select
+                value={selectedModel}
+                onChange={(e) => setSelectedModel(e.target.value as SupportedModel)}
+                className="bg-transparent font-bold text-indigo-700 focus:outline-none cursor-pointer appearance-none pr-4"
+              >
+                <optgroup label="Google (Gemini)">
+                  <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro Preview</option>
+                  <option value="gemini-flash-latest">Gemini Flash Latest (Free Tier)</option>
+                </optgroup>
+                <optgroup label="OpenAI (Coming Soon)">
+                  <option value="gpt-4o" disabled>GPT-4o</option>
+                </optgroup>
+                <optgroup label="Anthropic (Coming Soon)">
+                  <option value="claude-3-5-sonnet" disabled>Claude 3.5 Sonnet</option>
+                </optgroup>
+              </select>
+              <ChevronDown size={12} className="absolute right-3 pointer-events-none text-indigo-400" />
             </div>
           </div>
           

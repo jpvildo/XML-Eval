@@ -2,9 +2,12 @@ import { GoogleGenAI } from '@google/genai';
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
+export type SupportedModel = 'gemini-3.1-pro-preview' | 'gemini-flash-latest' | 'gpt-4o' | 'claude-3-5-sonnet';
+
 export async function evaluateConversion(
   knowledgeBase: string,
   mode: 'audit' | 'ingest' | 'update',
+  modelId: SupportedModel,
   inputs: {
     auditPairs?: {
       sourceName: string;
@@ -72,14 +75,26 @@ The user will provide a specific instruction to change a rule (e.g., "redefine h
     contents.parts.push({ text: `/update ${inputs.updateInstruction}` });
   }
 
-  const response = await ai.models.generateContent({
-    model: 'gemini-3.1-pro-preview',
-    contents,
-    config: {
-      systemInstruction,
-      temperature: 0.2, // Low temperature for more deterministic, rule-based auditing
-    },
-  });
+  // Route to the appropriate LLM provider based on the selected modelId
+  if (modelId.startsWith('gemini')) {
+    const response = await ai.models.generateContent({
+      model: modelId,
+      contents,
+      config: {
+        systemInstruction,
+        temperature: 0.2, // Low temperature for more deterministic, rule-based auditing
+      },
+    });
+    return response.text;
+  } else if (modelId.startsWith('gpt')) {
+    // Placeholder for OpenAI implementation
+    // Note: In a production app, this should be called from a backend server to protect the OPENAI_API_KEY.
+    throw new Error(`Model ${modelId} is configured in the UI but the OpenAI API integration is not yet implemented.`);
+  } else if (modelId.startsWith('claude')) {
+    // Placeholder for Anthropic implementation
+    // Note: In a production app, this should be called from a backend server to protect the ANTHROPIC_API_KEY.
+    throw new Error(`Model ${modelId} is configured in the UI but the Anthropic API integration is not yet implemented.`);
+  }
 
-  return response.text;
+  throw new Error(`Unsupported model: ${modelId}`);
 }
